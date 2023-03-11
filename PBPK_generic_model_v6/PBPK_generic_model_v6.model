@@ -1,0 +1,273 @@
+# Generic PBPK model - Frederic Bois 09/02/2017
+# v1: straight adaptation of the COSMOS INERIS generic model
+# v2: improved dermal model, based on the SEURAT piperonyl butoxide model
+# v3: re-organized parameter scaling and units
+# v4: scale partition coefficients to the fat partition coefficient and
+#     rename GFR by Ke
+# v4b: add ingestion rate and skin exposure inputs, and make inhaled
+#      concentration an input rather than a parameter
+# v5:  add a dummy input for modeling repeated exposures as events and fix
+#      error in dt(QLiver) and dt(QSkin_sc_e)
+# v6:  add quantity excreted in urine and mass balance, replace fup by fub
+
+#=========================================================
+# Units: 
+# volumes in L
+# time in hours
+# chemical masses in mmol
+# the default values are for humans
+#=========================================================
+
+States  = {QVen,       # Quantity in venous blood (mmoles)
+           QArt,       #             arterial blood
+           QFat,       #             fat tissues
+           QPoor,      #             muscle
+           QRich,      #             viscera
+           QLiver,     #             liver
+           QSkin_u,    #             viable skin, unexposed
+           QSkin_e,    #             viable skin, exposed
+           QSkin_sc_u, #             skin stratum corneum, unexposed
+           QSkin_sc_e, #             skin stratum corneum, exposed
+           QGut,       #             gut lumen
+           QExcret,    #             excreted in urine (cumulated)   
+           QMetab};    #             metabolized (cumulated)
+
+Inputs = {Ing_rate,            # ingestion rate, mmol / h
+          Skin_exposure_rate,  # rate of exposure to skin, mmol / h
+          Cinh,                # inhaled concentration, mmol / L
+          Event1};
+
+Outputs = {QTotal, # mass balance
+           CVen, CArt, CFat, CPoor, CRich, CLiver, 
+           CSkin_u, CSkin_e, CSkin_sc_u, CSkin_sc_e}; # concentrations (mM)
+
+
+# ===============================================================
+# Physiological parameters: default values (human default values)
+
+# body mass (kg)
+BM = 70; # Davies 1993
+
+# body skin surface area (dm2)
+BSA = 190; # ICRP 2002
+
+# organs as fraction of total body volume
+scVFat   = 0.209; # Birnbaum 1994, Brown 1997
+scVRich  = 0.105; # Birnbaum 1994, Brown 1997
+scVLiver = 0.024; # Birnbaum 1994, Brown 1997
+scVBlood = 0.068; # Davies 1993
+
+# skin thicknesses (decimeter)
+Height_sc = 0.0001;  # strateum corneum, Russell 2008
+Height_vs = 0.0122;  # viabile skin, Birnbaum 1994, Brown 1997
+
+# total blood flow, per unit mass, L / h / kg
+scFBlood = 4.8; # Davies 1993
+
+# fractions of total blood flow going to compartments
+scFFat   = 0.085; # Birnbaum 1994, Brown 1997
+scFPoor  = 0.120; # Birnbaum 1994, Brown 1997
+scFLiver = 0.270; # Birnbaum 1994, Brown 1997
+scFSkin  = 0.050; # Birnbaum 1994, Brown 1997
+
+# alveolar ventilation rate, L / h
+Falv = 2220; # Brown 1997
+
+# microsomal proteins content, mg / gr liver
+mic = 52.5; # Godin 2006
+
+
+# ===========================================================
+# chemical-dependent parameters: arbitrary (i.e. meaningless)
+
+# partition coefficients
+PCAir      = 0;   # blood over air
+log_PCFat  = 0;   # log of fat over blood p.c.
+
+# the other partition coefficients are regressed on PCFat to model
+# correlations
+log_aPoor    = log (1) - log_PCFat;   # muscle over blood
+log_aRich    = log (1) - log_PCFat;   # viscera over blood
+log_aLiver   = log (1) - log_PCFat;   # liver over blood
+log_aSkin    = log (1) - log_PCFat;   # viable skin / blood 
+log_aSkin_sc = log (1) - log_PCFat;   # viable skin / stratum corneum
+
+# diffusion rate from stratum corneum to viable skin (decim / h)
+Kp_sc_vs  = 0; 
+
+# excretion clearance L/h
+# set it to the GFR if the compound is passively excreted in urine
+# it can be used if a total body clearance is available
+Ke = 12;
+
+# Flag for Michaelis-Menten vs linear metabolism (0 = linear)
+Michaelis = 0; 
+
+# Michaelis-Menten metabolic pathway
+Vmax = 0;       # mmoles/h/L liver
+Km   = 0;       # mM
+
+# if linear metabolism:
+CLH  = 0;       # hepatic clearance (L / h)
+
+fub  = 0;       # unbound fraction in blood
+Frac = 0;       # fraction absorbed by the gut
+kGut = 0;       # oral 1st order absorption rate constant, 1 / h
+
+
+# =================================
+# exposure parameters and functions
+
+Tinh = 0;  # inhalation duration
+
+OralDose = 0;  # mmol, initial oral dose in gut lumen
+
+DermalDose  = 0;  # initial dermal dose (in stratum corneum, mmol)
+fSA_exposed = 1;  # fraction of skin surface area actually exposed
+
+
+# =================================================
+# scaled parameters, will be computed in Initialize
+
+FBlood;
+FFat;
+FPoor;
+FRich;
+FLiver;
+FSkin;
+VFat;
+VRich;
+VLiver;
+VSkin_e;
+VSkin_u;
+VSkin_sc_e;
+VSkin_sc_u;
+VBlood;
+VPoor;
+VArt;
+VVen;
+FSkin_e;
+FSkin_u;
+PCFat;
+PCPoor;
+PCRich;
+PCLiver;
+PCSkin;
+PCSkin_sc;
+
+
+# ========
+Initialize {
+
+  FBlood = scFBlood * BM;
+
+  FFat   = FBlood * scFFat;
+  FPoor  = FBlood * scFPoor;
+  FLiver = FBlood * scFLiver;
+  FSkin  = FBlood * scFSkin;
+
+  FRich  = FBlood - FFat - FPoor - FLiver - FSkin;
+
+  VFat   = BM * scVFat;
+  VRich  = BM * scVRich;
+  VLiver = BM * scVLiver;
+
+  VSkin_e = BSA * Height_vs * fSA_exposed;
+  VSkin_u = BSA * Height_vs * (1 - fSA_exposed);
+  
+  VSkin_sc_e = BSA * Height_sc * fSA_exposed;
+  VSkin_sc_u = BSA * Height_sc * (1 - fSA_exposed);
+
+  VBlood = BM * scVBlood;
+
+  # muscles are BM - others - bones
+  VPoor  = BM - VFat - VRich - VLiver - 
+           VSkin_e - VSkin_u - VSkin_sc_e - VSkin_sc_u - VBlood - 0.1 * BM;
+  
+  VArt   = VBlood / 3.0;
+  VVen   = VBlood - VArt;
+
+  FSkin_e = FSkin * fSA_exposed;
+  FSkin_u = FSkin - FSkin_e;
+
+  PCFat     = exp(log_PCFat);
+  PCLiver   = exp(log_aLiver   + log_PCFat);
+  PCRich    = exp(log_aRich    + log_PCFat);
+  PCPoor    = exp(log_aPoor    + log_PCFat);
+  PCSkin_sc = exp(log_aSkin_sc + log_PCFat);
+  PCSkin    = exp(log_aSkin    + log_PCFat);
+
+  QSkin_sc_e = DermalDose;        # state initialization for dermal dosing
+  QGut       = Frac * OralDose;   # for oral
+
+} # end Initialize
+
+
+# ========
+Dynamics {
+
+  CFat       = QFat       / VFat;
+  CPoor      = QPoor      / VPoor;
+  CRich      = QRich      / VRich;
+  CLiver     = QLiver     / VLiver;
+  CSkin_sc_u = (VSkin_sc_u > 0 ? QSkin_sc_u / VSkin_sc_u : 0);
+  CSkin_sc_e = (VSkin_sc_e > 0 ? QSkin_sc_e / VSkin_sc_e : 0);
+  CSkin_u    = (VSkin_u    > 0 ? QSkin_u    / VSkin_u    : 0);
+  CSkin_e    = (VSkin_e    > 0 ? QSkin_e    / VSkin_e    : 0);
+  CArt       = QArt       / VArt;
+  CVen       = QVen       / VVen;
+
+  dt(QFat)  = FFat  * (CArt - CFat  / PCFat);
+
+  dt(QPoor) = FPoor * (CArt - CPoor / PCPoor);
+
+  dt(QRich) = FRich * (CArt - CRich / PCRich);
+
+  dt(QGut) = -kGut * QGut + Frac * Ing_rate; # gut lumen
+
+  tmp = CLiver / PCLiver;
+  dt(QMetab) = (Michaelis > 0.5 ?
+                fub * VLiver * Vmax * tmp / (Km + tmp) : # MM
+                fub * CLH * tmp);                        # linear
+
+  dt(QLiver) = FLiver * (CArt - tmp) + kGut * QGut - dt(QMetab);
+
+  # skin stratum corneum unexposed
+  dt(QSkin_sc_u) = Kp_sc_vs * BSA * (1 - fSA_exposed) * 
+                   (CSkin_u / PCSkin_sc - CSkin_sc_u);
+
+  # viable skin unexposed
+  dt(QSkin_u) = FSkin_u * (CArt - CSkin_u / PCSkin) - dt(QSkin_sc_u);
+
+  # skin stratum corneum exposed
+  tmp = Kp_sc_vs * BSA * fSA_exposed * (CSkin_e / PCSkin_sc - CSkin_sc_e);
+  dt(QSkin_sc_e) = tmp + Skin_exposure_rate;
+
+  # viable skin exposed
+  dt(QSkin_e) = FSkin_e * (CArt - CSkin_e / PCSkin) - tmp;
+
+  dt(QExcret) = Ke * fub * CArt;
+    
+  dt(QArt) = Falv * (Cinh - CArt / PCAir) + 
+             FBlood * (CVen - CArt) - dt(QExcret);
+
+  dt(QVen) = FFat    * CFat    / PCFat +
+             FPoor   * CPoor   / PCPoor +
+             FRich   * CRich   / PCRich +
+             FLiver  * CLiver  / PCLiver +
+             FSkin_u * CSkin_u / PCSkin +
+             FSkin_e * CSkin_e / PCSkin -
+             FBlood  * CVen;
+
+} # end Dynamics
+
+Events {
+  QGut = 1;
+}
+
+CalcOutputs {
+  QTotal = QVen + QArt + QFat + QPoor + QRich + QLiver + QSkin_u + QSkin_e +
+           QSkin_sc_u + QSkin_sc_e + QGut + QExcret + QMetab;
+}
+
+End.
