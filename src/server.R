@@ -13,7 +13,7 @@ server <- function(input, output) {
     req(input$modelSelect)
     modelName <- input$modelSelect
     modelPath <- input$modelSelect
-    buildModel(modelName, modelPath = modelName)
+    buildModel(modelName, modelPath = modelName, force = FALSE)
     loadModel(modelName, modelPath = modelName)
     list(
       modelName = modelName,
@@ -49,18 +49,28 @@ server <- function(input, output) {
     req(input$paramFile)
     req(input$selectedModelInstance)
     model <- getModel()
+    dose <- input$dose
+    dosingPattern <- input$dosingPattern
     numDays <- input$numDays
-    bodyweight <- input$bodyweight;
-    MM <- 223;
-    times <- seq(from=0, to=24*numDays, by=1)
-    oralDose <- as.numeric(1/24/MM * 1e3 * bodyweight)
-    doseTimes <- seq(from=0, to=24*50, by=24)
-    eventsData <- data.frame(
-      var=rep("QGut", length(doseTimes)),
-      time=doseTimes,
-      value=rep(oralDose, length(doseTimes)), 
-      method=rep("add",length(doseTimes))
-    )
+    times <- seq(from=0, to=24 * numDays, by=1)
+    oralDose <- as.numeric(dose)
+    if (dosingPattern == "daily") {
+      doseTimes <- seq(from=0, to=24*50, by=24)
+      eventsData <- data.frame(
+        var=rep("QGut", length(doseTimes)),
+        time=doseTimes,
+        value=rep(oralDose, length(doseTimes)), 
+        method=rep("add",length(doseTimes))
+      )
+    } else {
+      doseTimes <- c(0)
+      eventsData <- data.frame(
+        var=rep("QGut", length(doseTimes)),
+        time=doseTimes,
+        value=rep(oralDose, length(doseTimes)), 
+        method=rep("add",length(doseTimes))
+      )
+    }
     out <- runModel(
       model$modelName, 
       getInstanceParams(), 
@@ -133,7 +143,7 @@ server <- function(input, output) {
     plotOutputList <- lapply(1:length(selectedVals$outputs), function(i) {
       column(width = 6, {
         plotname <- paste("plot_", selectedVals$outputs[i], sep="")
-        plotOutput(plotname, width = "100%")
+        plotOutput(plotname, width = "100%", height = "350px")
       })
     })
     do.call(tagList, plotOutputList)

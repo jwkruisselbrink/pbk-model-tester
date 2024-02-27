@@ -30,19 +30,29 @@ ui <- fluidPage(
       # Input: model instance select
       uiOutput("modelInstanceSelect"),
 
+      # Input: dosing pattern
+      selectInput(
+        "dosingPattern",
+        "Dosing pattern:",
+        c(
+          "Single dose" = "sinlge",
+          "Repeated daily dose" = "daily"
+        )
+      ),
+      
+      # Input: dose
+      numericInput(
+        "dose", 
+        "Dose",
+        step = .1,
+        value = 1),
+
       # Input: number of days
       numericInput(
         "numDays", 
         "Days",
          value = 25),
 
-      # Input: bodyweight
-      sliderInput(
-        "bodyweight", 
-        "Bodyweight",
-        min = 1,
-        max = 150, 
-        value = 70),
       uiOutput("outputMultiSelect"),
     ),
 

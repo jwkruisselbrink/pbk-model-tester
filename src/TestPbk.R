@@ -1,5 +1,10 @@
 source('PbkUtils.R')
 
+xx <- 'BIOMD0000001028/SBML_List.in'
+
+system(paste('mod.exe -R "' , xx, '"', sep=''))
+
+
 modelName <- "PBPK_generic_model_v6"
 modelPath <- modelName
 buildModel(modelName, modelPath = modelName)
@@ -43,7 +48,7 @@ allDose <- list(
 runModel(modelName, instanceParameters, times, NULL, forcings = allDose)
 out <- runModel(modelName, instanceParameters, times, eventsData)
 
-
+library(XML)
 library(xml2)
 xmlFile <- file.path(modelPath, paste(modelName, '.xml', sep=""))
 data <- read_xml(xmlFile)
@@ -52,6 +57,9 @@ data.frame(
   name = xml_text(xml_find_all(data, "//Forcings//Forcing//Name")),
   description = xml_text(xml_find_all(data, "//Forcings//Forcing//Description"))
 )
+d <- xmlParse(data)
+
+inputs <- xmlToDataFrame(nodes=getNodeSet(food_xml, "//Forcings//Forcing"))
 
 
 

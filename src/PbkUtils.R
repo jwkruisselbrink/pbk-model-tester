@@ -1,8 +1,11 @@
-buildModel <- function(modelName, modelPath = ".") {
+buildModel <- function(modelName, modelPath = ".", force = T) {
   fileNameMCSimModel <- paste(file.path(modelPath, modelName), '.model', sep='')
   fileNameCModel <- paste(file.path(modelPath, modelName), '.c', sep='')
-  system(paste('mod.exe -R "' , fileNameMCSimModel, '" "', fileNameCModel, '"', sep=''))
-  system(paste('R CMD SHLIB "', file.path(modelPath, modelName), '".c', sep=''))
+  dllFileName <- paste(file.path(modelPath, modelName), .Platform$dynlib.ext, sep="")
+  if (!file.exists(dllFileName) || force) {
+    system(paste('mod.exe -R "' , fileNameMCSimModel, '" "', fileNameCModel, '"', sep=''))
+    system(paste('R CMD SHLIB "', fileNameCModel, '"', sep=''))
+  }
 }
 
 loadModel <- function(modelName, modelPath = "./") {
